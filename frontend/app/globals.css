@@ -1,0 +1,132 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: 'Inter', system-ui, sans-serif;
+  --color-navy-950: #030712;
+  --color-navy-900: #0a0f1e;
+  --color-navy-800: #0d1a3a;
+  --color-navy-700: #111f4a;
+  --color-navy-600: #1a2d5a;
+  --color-navy-500: #1e3564;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html { scroll-behavior: smooth; -webkit-font-smoothing: antialiased; }
+body { font-family: 'Inter', system-ui, sans-serif; background: #030712; color: #fff; min-height: 100vh; }
+input, select, textarea, button { font-family: inherit; }
+::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar-track { background: #0a0f1e; }
+::-webkit-scrollbar-thumb { background: #2563eb; border-radius: 99px; }
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50%       { transform: translateY(-8px); }
+}
+@keyframes shimmer {
+  from { background-position: -200% center; }
+  to   { background-position: 200% center; }
+}
+@keyframes pulseGlow {
+  0%, 100% { box-shadow: 0 0 8px rgba(16,185,129,0.6); }
+  50%       { box-shadow: 0 0 16px rgba(16,185,129,0.9), 0 0 32px rgba(16,185,129,0.3); }
+}
+
+.animate-slide-up  { animation: slideUp 0.5s ease-out both; }
+.animate-fade-in   { animation: fadeIn 0.4s ease-out both; }
+.animate-float     { animation: float 5s ease-in-out infinite; }
+.animate-pulse-glow { animation: pulseGlow 2s ease-in-out infinite; }
+
+/* Gradient text */
+.text-gradient {
+  background: linear-gradient(135deg, #60a5fa, #3b82f6, #818cf8);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.text-gradient-green {
+  background: linear-gradient(135deg, #34d399, #10b981, #06b6d4);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.text-shimmer {
+  background: linear-gradient(90deg, #60a5fa 0%, #a5b4fc 30%, #60a5fa 60%, #a5b4fc 100%);
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  animation: shimmer 3s linear infinite;
+}
+
+/* Glass morphism card */
+.glass {
+  background: rgba(255,255,255,0.03);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 16px;
+}
+.glass-dark {
+  background: rgba(3,7,18,0.6);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 16px;
+}
+.glass-blue {
+  background: linear-gradient(135deg, rgba(37,99,235,0.15), rgba(59,130,246,0.08));
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(59,130,246,0.2);
+  border-radius: 16px;
+}
+
+/* Live dot */
+.live-dot {
+  width: 8px; height: 8px;
+  background: #10b981;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+  animation: pulseGlow 2s ease-in-out infinite;
+}
+
+/* Nav active */
+.nav-active {
+  background: linear-gradient(135deg, rgba(37,99,235,0.2), rgba(59,130,246,0.1));
+  border: 1px solid rgba(59,130,246,0.3);
+  color: #fff;
+}
+
+/* Glow effects */
+.glow-blue  { box-shadow: 0 0 30px rgba(59,130,246,0.4), 0 0 60px rgba(59,130,246,0.15); }
+.glow-green { box-shadow: 0 0 30px rgba(16,185,129,0.4), 0 0 60px rgba(16,185,129,0.15); }
+.glow-red   { box-shadow: 0 0 20px rgba(239,68,68,0.4); }
+
+/* Token priority rings */
+.ring-emergency { box-shadow: 0 0 0 2px #ef4444, 0 0 16px rgba(239,68,68,0.3); }
+.ring-urgent    { box-shadow: 0 0 0 2px #f59e0b; }
+
+/* Table */
+.data-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.data-table thead th {
+  padding: 0 16px 12px;
+  text-align: left;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: rgba(255,255,255,0.3);
+}
+.data-table tbody td {
+  padding: 14px 16px;
+  border-top: 1px solid rgba(255,255,255,0.04);
+  color: rgba(255,255,255,0.75);
+  vertical-align: middle;
+}
+.data-table tbody tr:hover td { background: rgba(255,255,255,0.025); }
