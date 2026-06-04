@@ -1,0 +1,56 @@
+version: '3.9'
+
+services:
+  db:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: queuecare
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:password@db:5432/queuecare
+      SECRET_KEY: change-this-in-production-use-long-random-string
+      CORS_ORIGINS: http://localhost:3000
+      MODEL_PATH: /app/ml-models/xgb_model.joblib
+      ENCODER_PATH: /app/ml-models/encoders.joblib
+      SCALER_PATH: /app/ml-models/scaler.joblib
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./ml-models:/app/ml-models
+      - ./datasets:/app/datasets
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+      NEXT_PUBLIC_WS_URL: ws://localhost:8000
+    ports:
+      - "3000:3000"
+
+volumes:
+  pgdata:
