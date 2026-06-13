@@ -16,7 +16,7 @@ from core.config import settings
 from database.connection import engine, Base
 
 # Import all models so SQLAlchemy registers them
-from models import User, Doctor, Queue, ConsultationLog, PredictionHistory  # noqa: F401
+from models import User, Doctor, Queue, ConsultationLog, PredictionHistory, DoctorShift  # noqa: F401
 
 from routes.auth import router as auth_router
 from routes.queue import router as queue_router

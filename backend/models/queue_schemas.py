@@ -118,3 +118,21 @@ class AnalyticsSummary(BaseModel):
     prediction_accuracy: float
     delay_probability: float
     peak_hour_forecast: str
+
+
+# ── Doctor Shift Schemas ───────────────────────────────────────────────────────
+
+class ShiftCreate(BaseModel):
+    start_time: datetime
+    end_time: datetime
+
+
+class ShiftResponse(BaseModel):
+    id: str
+    doctor_id: str
+    start_time: datetime
+    end_time: datetime
+
+    class Config:
+        from_attributes = True
+

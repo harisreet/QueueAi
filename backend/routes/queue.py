@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, update
-from datetime import datetime
+from datetime import datetime, timedelta
 import uuid
 
 from database import get_db
@@ -11,6 +11,7 @@ from models.doctor import Doctor
 from models.queue_schemas import (
     BookTokenRequest, QueueStatusResponse, UpdateQueueStatusRequest
 )
+from models.doctor_shift import DoctorShift
 from auth.dependencies import get_current_user
 from ai_engine.predictor import predict_wait_time
 from websocket.manager import manager
@@ -58,13 +59,34 @@ async def _recalculate_queue(db: AsyncSession, department: str, commit: bool = T
         q.checkin_time or datetime.utcnow(),
     ))
 
-    # Fetch available doctors
+    # Fetch all doctors in this department
     dr = await db.execute(
-        select(Doctor).where(Doctor.department == department, Doctor.is_available == True)
+        select(Doctor).where(Doctor.department == department)
     )
-    doctors = dr.scalars().all()
-    doctors_count = max(1, len(doctors))
-    avg_time = sum(d.avg_consult_time for d in doctors) / doctors_count if doctors else 10.0
+    all_doctors = list(dr.scalars().all())
+    
+    # Fetch all shift schedules for doctors in this department
+    all_shifts = []
+    if all_doctors:
+        shifts_res = await db.execute(
+            select(DoctorShift)
+            .where(DoctorShift.doctor_id.in_([d.id for d in all_doctors]))
+        )
+        all_shifts = list(shifts_res.scalars().all())
+
+    # Helper to check if a doctor is on duty/shift at a projected time
+    def is_doctor_on_shift(doctor_id: str, target_time: datetime) -> bool:
+        # If no shifts are scheduled for any doctor in this department, default to current live availability
+        doctor_has_any_shifts = any(s.doctor_id == doctor_id for s in all_shifts)
+        if not doctor_has_any_shifts:
+            doc_obj = next((d for d in all_doctors if d.id == doctor_id), None)
+            return doc_obj.is_available if doc_obj else False
+        
+        # Otherwise, check if target_time falls within any scheduled shift
+        for shift in all_shifts:
+            if shift.doctor_id == doctor_id and shift.start_time <= target_time <= shift.end_time:
+                return True
+        return False
 
     # Count ongoing consultation (occupies a doctor slot)
     in_consult = await db.execute(
@@ -73,7 +95,6 @@ async def _recalculate_queue(db: AsyncSession, department: str, commit: bool = T
         )
     )
     in_consult_count = in_consult.scalar() or 0
-    effective_doctors = max(1, doctors_count - in_consult_count)
 
     # Emergency count
     emg = sum(1 for q in waiting if q.is_emergency)
@@ -81,12 +102,27 @@ async def _recalculate_queue(db: AsyncSession, department: str, commit: bool = T
     tod = _get_time_of_day(now)
     day = now.strftime("%A")
 
+    # Dynamic fallback average consultation time
+    fallback_avg_time = sum(d.avg_consult_time for d in all_doctors if d.is_available) / max(1, sum(1 for d in all_doctors if d.is_available)) if all_doctors else 10.0
+
     cumulative_wait = 0.0
     for i, entry in enumerate(waiting):
+        estimated_start_time = now + timedelta(minutes=cumulative_wait)
+        
+        # Filter doctors who are on duty at this projected starting time
+        active_docs_at_slot = [d for d in all_doctors if is_doctor_on_shift(d.id, estimated_start_time)]
+        active_count = max(1, len(active_docs_at_slot))
+        
+        slot_avg_time = sum(d.avg_consult_time for d in active_docs_at_slot) / active_count if active_docs_at_slot else fallback_avg_time
+
+        # Ongoing consultations clear up as time passes (approx. slot_avg_time per ongoing consult)
+        projected_ongoing = max(0.0, float(in_consult_count) - (cumulative_wait / max(1.0, slot_avg_time)))
+        effective_count = max(1.0, float(active_count) - projected_ongoing)
+
         pred = predict_wait_time(
             queue_length=i + 1,
-            doctors_available=effective_doctors,
-            avg_consult_time=avg_time,
+            doctors_available=max(1, int(round(effective_count))),
+            avg_consult_time=slot_avg_time,
             emergency_cases=emg,
             department=department,
             time_of_day=tod,
@@ -94,15 +130,16 @@ async def _recalculate_queue(db: AsyncSession, department: str, commit: bool = T
             patient_priority=entry.priority,
             consultation_complexity=entry.complexity,
         )
-        # Cumulative wait so positions further back account for those ahead
+        
         slot_wait = pred["predicted_wait_time"]
-        cumulative_wait = max(cumulative_wait, slot_wait) if i == 0 else cumulative_wait + avg_time * (1.0 / effective_doctors)
+        cumulative_wait = slot_wait  # The wait time for this patient acts as the starting offset for the next patient
+        
         await db.execute(
             update(Queue)
             .where(Queue.id == entry.id)
             .values(
                 queue_position=i + 1,
-                predicted_wait=round(slot_wait + (i * avg_time / effective_doctors), 1),
+                predicted_wait=round(slot_wait, 1),
                 confidence_score=pred["confidence"],
             )
         )

@@ -61,6 +61,9 @@ export const doctorAPI = {
     api.post("/doctors/end-consultation", { queue_id, notes }),
   updateStatus: (doctorId: string, status: string) =>
     api.put(`/doctors/${doctorId}/status?status=${status}`),
+  getShifts: (doctorId: string) => api.get(`/doctors/${doctorId}/shifts`),
+  addShift: (doctorId: string, data: { start_time: string; end_time: string }) => api.post(`/doctors/${doctorId}/shifts`, data),
+  deleteShift: (shiftId: string) => api.delete(`/doctors/shifts/${shiftId}`),
 };
 
 // ── Users ─────────────────────────────────────────────────────────────────────

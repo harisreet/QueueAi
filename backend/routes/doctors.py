@@ -6,9 +6,10 @@ from datetime import datetime, date
 from database import get_db
 from models.user import User
 from models.doctor import Doctor
+from models.doctor_shift import DoctorShift
 from models.queue import Queue
 from models.consultation import ConsultationLog
-from models.queue_schemas import DoctorCreate, DoctorUpdate, DoctorResponse, StartConsultationRequest, EndConsultationRequest
+from models.queue_schemas import DoctorCreate, DoctorUpdate, DoctorResponse, StartConsultationRequest, EndConsultationRequest, ShiftCreate, ShiftResponse
 from auth.dependencies import get_current_user
 from auth.jwt_handler import get_password_hash
 from websocket.manager import manager
@@ -267,3 +268,89 @@ async def update_doctor_status(
     await db.commit()
     await manager.broadcast_global("doctor_status_changed", {"doctor_id": doctor_id, "status": status})
     return {"message": f"Doctor status set to {status}"}
+
+
+@router.get("/{doctor_id}/shifts", response_model=list[ShiftResponse])
+async def list_doctor_shifts(
+    doctor_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Get all shifts scheduled for a doctor."""
+    result = await db.execute(
+        select(DoctorShift)
+        .where(DoctorShift.doctor_id == doctor_id)
+        .order_by(DoctorShift.start_time.asc())
+    )
+    return result.scalars().all()
+
+
+@router.post("/{doctor_id}/shifts", response_model=ShiftResponse, status_code=201)
+async def create_doctor_shift(
+    doctor_id: str,
+    payload: ShiftCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Add a new scheduled shift block for a doctor."""
+    # Authenticate: Only doctor themselves, receptionist, or admin can schedule/edit shifts
+    if current_user.role not in ("admin", "receptionist"):
+        # Check if the doctor matches the logged in user
+        dr_res = await db.execute(select(Doctor).where(Doctor.id == doctor_id))
+        doc = dr_res.scalar_one_or_none()
+        if not doc or doc.user_id != current_user.id:
+            raise HTTPException(403, "Insufficient permissions to edit this doctor's shifts")
+
+    if payload.start_time >= payload.end_time:
+        raise HTTPException(400, "Shift start time must be before end time")
+
+    # Check for overlaps
+    overlap_res = await db.execute(
+        select(DoctorShift).where(
+            DoctorShift.doctor_id == doctor_id,
+            DoctorShift.start_time < payload.end_time,
+            DoctorShift.end_time > payload.start_time,
+        )
+    )
+    if overlap_res.scalar_one_or_none():
+        raise HTTPException(400, "This shift overlaps with an existing scheduled shift")
+
+    shift = DoctorShift(
+        id=str(uuid.uuid4()),
+        doctor_id=doctor_id,
+        start_time=payload.start_time,
+        end_time=payload.end_time,
+    )
+    db.add(shift)
+    await db.commit()
+    
+    # Broadcast status change to keep the UI refreshed
+    await manager.broadcast_global("doctor_status_changed", {"doctor_id": doctor_id, "status": "shift_added"})
+    
+    return shift
+
+
+@router.delete("/shifts/{shift_id}")
+async def delete_doctor_shift(
+    shift_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Delete/cancel a scheduled shift."""
+    result = await db.execute(select(DoctorShift).where(DoctorShift.id == shift_id))
+    shift = result.scalar_one_or_none()
+    if not shift:
+        raise HTTPException(404, "Shift not found")
+
+    # Auth check: only doctor themselves, receptionist, or admin
+    if current_user.role not in ("admin", "receptionist"):
+        dr_res = await db.execute(select(Doctor).where(Doctor.id == shift.doctor_id))
+        doc = dr_res.scalar_one_or_none()
+        if not doc or doc.user_id != current_user.id:
+            raise HTTPException(403, "Insufficient permissions to delete this shift")
+
+    await db.delete(shift)
+    await db.commit()
+    
+    await manager.broadcast_global("doctor_status_changed", {"doctor_id": shift.doctor_id, "status": "shift_deleted"})
+    return {"message": "Shift deleted", "shift_id": shift_id}
