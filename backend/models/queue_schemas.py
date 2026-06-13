@@ -11,6 +11,7 @@ class BookTokenRequest(BaseModel):
     priority: str = "normal"        # normal | urgent | emergency
     complexity: str = "routine"     # routine | moderate | complex
     appointment_time: Optional[datetime] = None
+    patient_name: Optional[str] = None  # Walk-in override — used by receptionists/admin
 
 
 class QueueStatusResponse(BaseModel):
@@ -46,6 +47,8 @@ class DoctorCreate(BaseModel):
     department: str
     specialization: Optional[str] = None
     avg_consult_time: float = 10.0
+    email: Optional[str] = None
+    password: Optional[str] = None
 
 
 class DoctorUpdate(BaseModel):
@@ -59,6 +62,7 @@ class DoctorUpdate(BaseModel):
 
 class DoctorResponse(BaseModel):
     id: str
+    user_id: Optional[str] = None
     name: str
     department: str
     specialization: Optional[str]

@@ -19,6 +19,7 @@ export default function AddPatientPage() {
   const [doctors, setDoctors] = useState<any[]>([]);
   const [loadingDocs, setLoadingDocs] = useState(false);
   const [form, setForm] = useState({
+    patient_name: "",
     department: "General Medicine",
     doctor_id: "",
     priority: "normal",
@@ -93,10 +94,12 @@ export default function AddPatientPage() {
         department: form.department,
         doctor_id: form.doctor_id || undefined,
         priority: form.priority,
-        complexity: form.complexity
+        complexity: form.complexity,
+        patient_name: form.patient_name.trim() || undefined,
       });
-      toast.success(`🎟️ Patient added! Token: ${res.data.token_no}`);
+      toast.success(`🎟️ Token issued for ${form.patient_name || "patient"}: ${res.data.token_no}`);
       setForm({
+        patient_name: "",
         department: "General Medicine",
         doctor_id: "",
         priority: "normal",
@@ -121,6 +124,16 @@ export default function AddPatientPage() {
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">
+            {/* Patient Name */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-400 mb-2">Patient Name *</label>
+              <input
+                type="text" required placeholder="Full name of walk-in patient"
+                value={form.patient_name}
+                onChange={e => setForm({ ...form, patient_name: e.target.value })}
+                className="w-full py-3 px-4 rounded-xl text-sm text-white placeholder:text-slate-600 outline-none border border-white/[0.08] focus:border-blue-500/50" style={{ background: "rgba(255,255,255,0.04)" }}
+              />
+            </div>
             <div>
               <label className="block text-xs font-semibold text-slate-400 mb-2">Department</label>
               <div className="relative">

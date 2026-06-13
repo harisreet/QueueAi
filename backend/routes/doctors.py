@@ -10,6 +10,7 @@ from models.queue import Queue
 from models.consultation import ConsultationLog
 from models.queue_schemas import DoctorCreate, DoctorUpdate, DoctorResponse, StartConsultationRequest, EndConsultationRequest
 from auth.dependencies import get_current_user
+from auth.jwt_handler import get_password_hash
 from websocket.manager import manager
 import uuid
 
@@ -25,18 +26,39 @@ async def create_doctor(
     if current_user.role not in ("admin", "receptionist"):
         raise HTTPException(403, "Insufficient permissions")
 
+    linked_user_id = current_user.id
+
+    # If email + password provided, create a linked User account for the doctor
+    if payload.email and payload.password:
+        existing = await db.execute(select(User).where(User.email == payload.email))
+        if existing.scalar_one_or_none():
+            raise HTTPException(400, "A user with this email already exists")
+        new_user = User(
+            id=str(uuid.uuid4()),
+            name=payload.name,
+            email=payload.email,
+            hashed_password=get_password_hash(payload.password),
+            role="doctor",
+            department=payload.department,
+        )
+        db.add(new_user)
+        await db.flush()
+        linked_user_id = new_user.id
+
     doc = Doctor(
         id=str(uuid.uuid4()),
-        user_id=current_user.id,
+        user_id=linked_user_id,
         name=payload.name,
         department=payload.department,
         specialization=payload.specialization,
         avg_consult_time=payload.avg_consult_time,
+        status="available",
+        is_available=True,
     )
     db.add(doc)
     await db.flush()
     return DoctorResponse(
-        id=doc.id, name=doc.name, department=doc.department,
+        id=doc.id, user_id=doc.user_id, name=doc.name, department=doc.department,
         specialization=doc.specialization, avg_consult_time=doc.avg_consult_time,
         status=doc.status, is_available=doc.is_available,
         patients_served_today=doc.patients_served_today,
@@ -51,7 +73,7 @@ async def list_doctors(department: str | None = None, db: AsyncSession = Depends
     result = await db.execute(query)
     return [
         DoctorResponse(
-            id=d.id, name=d.name, department=d.department,
+            id=d.id, user_id=d.user_id, name=d.name, department=d.department,
             specialization=d.specialization, avg_consult_time=d.avg_consult_time,
             status=d.status, is_available=d.is_available,
             patients_served_today=d.patients_served_today,
@@ -96,6 +118,13 @@ async def start_consultation(
     now = datetime.utcnow()
     await db.execute(update(Queue).where(Queue.id == payload.queue_id).values(status="in_consultation"))
 
+    # Update doctor status to busy
+    if entry.doctor_id:
+        await db.execute(
+            update(Doctor).where(Doctor.id == entry.doctor_id)
+            .values(status="busy", is_available=False)
+        )
+
     # Create consultation log
     log = ConsultationLog(
         id=str(uuid.uuid4()),
@@ -109,6 +138,10 @@ async def start_consultation(
         complexity=entry.complexity,
     )
     db.add(log)
+
+    # Recalculate wait times for rest of queue now that a patient started consultation
+    from routes.queue import _recalculate_queue
+    await _recalculate_queue(db, entry.department, commit=False)
     await db.commit()
 
     await manager.send_to_patient(entry.patient_id, "consultation_started", {
@@ -165,11 +198,17 @@ async def end_consultation(
                     .values(avg_consult_time=new_avg, patients_served_today=doc.patients_served_today + 1)
                 )
 
-    await db.commit()
+    # Set doctor back to available after consultation ends
+    if entry.doctor_id:
+        await db.execute(
+            update(Doctor).where(Doctor.id == entry.doctor_id)
+            .values(status="available", is_available=True)
+        )
 
     # Recalculate downstream queue
     from routes.queue import _recalculate_queue
-    await _recalculate_queue(db, entry.department)
+    await _recalculate_queue(db, entry.department, commit=False)
+    await db.commit()
 
     await manager.broadcast_global("consultation_ended", {"department": entry.department, "token_no": entry.token_no})
     return {"message": "Consultation ended", "queue_id": payload.queue_id}

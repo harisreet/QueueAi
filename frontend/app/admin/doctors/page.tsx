@@ -39,7 +39,9 @@ export default function DoctorManagementPage() {
     name: "",
     department: "General Medicine",
     specialization: "",
-    avg_consult_time: 10
+    avg_consult_time: 10,
+    email: "",
+    password: "",
   });
 
   const loadDoctors = useCallback(async () => {
@@ -66,13 +68,24 @@ export default function DoctorManagementPage() {
   const handleAddDoctor = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await doctorAPI.create(form);
-      toast.success("👨‍⚕️ Doctor profile registered successfully!");
+      const payload: any = {
+        name: form.name,
+        department: form.department,
+        specialization: form.specialization || undefined,
+        avg_consult_time: form.avg_consult_time,
+      };
+      if (form.email && form.password) {
+        payload.email = form.email;
+        payload.password = form.password;
+      }
+      await doctorAPI.create(payload);
+      const credMsg = form.email ? ` Login: ${form.email}` : " (No login credentials created)";
+      toast.success(`Doctor registered!${credMsg}`);
       setIsAddOpen(false);
-      setForm({ name: "", department: "General Medicine", specialization: "", avg_consult_time: 10 });
+      setForm({ name: "", department: "General Medicine", specialization: "", avg_consult_time: 10, email: "", password: "" });
       loadDoctors();
-    } catch (e) {
-      toast.error("Failed to register doctor");
+    } catch (e: any) {
+      toast.error(e?.response?.data?.detail || "Failed to register doctor");
     }
   };
 
@@ -153,9 +166,12 @@ export default function DoctorManagementPage() {
         {/* Register Dialog */}
         {isAddOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-            <div className="w-full max-w-md border border-white/10 rounded-2xl p-6 text-left" style={{ background: "linear-gradient(160deg,#0a0f1e, #030712)" }}>
+            <div className="w-full max-w-lg border border-white/10 rounded-2xl p-6 text-left overflow-y-auto max-h-[90vh]" style={{ background: "linear-gradient(160deg,#0a0f1e, #030712)" }}>
               <div className="flex justify-between items-center mb-6">
-                <h3 className="text-base font-bold text-white">Register Doctor</h3>
+                <div>
+                  <h3 className="text-base font-bold text-white">Register Doctor</h3>
+                  <p className="text-xs text-slate-500 mt-0.5">Profile only — or include login credentials</p>
+                </div>
                 <button onClick={() => setIsAddOpen(false)} className="text-slate-500 hover:text-white"><X className="w-5 h-5" /></button>
               </div>
               <form onSubmit={handleAddDoctor} className="space-y-4">
@@ -184,6 +200,21 @@ export default function DoctorManagementPage() {
                   <label className="block text-xs font-semibold text-slate-400 mb-2">Avg Consultation Duration (Minutes)</label>
                   <input type="number" required min="1" max="120" value={form.avg_consult_time} onChange={e => setForm({ ...form, avg_consult_time: parseInt(e.target.value) })}
                     className="w-full py-3 px-4 rounded-xl text-sm text-white placeholder:text-slate-600 outline-none border border-white/[0.08] focus:border-blue-500/50" style={{ background: "rgba(255,255,255,0.04)" }} />
+                </div>
+
+                {/* Optional Login Credentials */}
+                <div className="pt-2 border-t border-white/[0.05]">
+                  <div className="flex items-center gap-2 mb-3">
+                    <UserPlus className="w-3.5 h-3.5 text-blue-400" />
+                    <span className="text-xs font-semibold text-blue-400">Login Credentials (optional)</span>
+                    <span className="text-[10px] text-slate-500">— lets doctor sign in</span>
+                  </div>
+                  <div className="space-y-3">
+                    <input type="email" placeholder="doctor@hospital.com" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })}
+                      className="w-full py-3 px-4 rounded-xl text-sm text-white placeholder:text-slate-600 outline-none border border-white/[0.08] focus:border-blue-500/50" style={{ background: "rgba(255,255,255,0.04)" }} />
+                    <input type="password" placeholder="Min 6 characters" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })}
+                      className="w-full py-3 px-4 rounded-xl text-sm text-white placeholder:text-slate-600 outline-none border border-white/[0.08] focus:border-blue-500/50" style={{ background: "rgba(255,255,255,0.04)" }} />
+                  </div>
                 </div>
 
                 <button type="submit" className="w-full py-3 rounded-xl text-sm font-bold text-white bg-blue-600 hover:bg-blue-500 transition-all">

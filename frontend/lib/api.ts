@@ -98,12 +98,14 @@ export const analyticsAPI = {
 // ── Types ─────────────────────────────────────────────────────────────────────
 export interface SignupPayload {
   name: string; email: string; password: string;
-  role: string; phone?: string; age?: number; gender?: string; department?: string;
+  role: string; phone?: string; age?: number; gender?: string;
+  department?: string; specialization?: string;
 }
 export interface LoginPayload { email: string; password: string; }
 export interface BookTokenPayload {
   department: string; doctor_id?: string;
   priority?: string; complexity?: string;
+  patient_name?: string;
 }
 export interface DoctorPayload {
   name: string; department: string; specialization?: string; avg_consult_time?: number;

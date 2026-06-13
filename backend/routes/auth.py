@@ -3,9 +3,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from database import get_db
 from models.user import User
+from models.doctor import Doctor
 from models.schemas import SignupRequest, LoginRequest, TokenResponse, UserResponse
 from auth.jwt_handler import get_password_hash, verify_password, create_access_token
 from auth.dependencies import get_current_user
+import uuid
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
@@ -28,6 +30,21 @@ async def signup(payload: SignupRequest, db: AsyncSession = Depends(get_db)):
     )
     db.add(user)
     await db.flush()
+
+    # Auto-create Doctor profile if registering as a doctor
+    if payload.role.value == "doctor":
+        doctor = Doctor(
+            id=str(uuid.uuid4()),
+            user_id=user.id,
+            name=user.name,
+            department=payload.department or "General Medicine",
+            specialization=payload.specialization,
+            avg_consult_time=10.0,
+            status="available",
+            is_available=True,
+        )
+        db.add(doctor)
+        await db.flush()
 
     token = create_access_token({"sub": user.id, "role": user.role})
     return TokenResponse(access_token=token, role=user.role, user_id=user.id, name=user.name)

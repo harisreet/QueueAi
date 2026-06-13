@@ -30,7 +30,8 @@ interface QueueEntry {
   predicted_wait: number; is_emergency: boolean; checkin_time: string;
 }
 interface DoctorInfo {
-  id: string; name: string; department: string;
+  id: string; user_id: string; name: string; department: string;
+  specialization: string | null;
   avg_consult_time: number; status: string; patients_served_today: number;
 }
 
@@ -55,8 +56,12 @@ export default function DoctorDashboard() {
   const loadDoctor = useCallback(async () => {
     try {
       const r  = await doctorAPI.list();
-      const me = r.data.find((d: DoctorInfo) => d.name === user?.name);
-      if (me) setDoctor(me);
+      // Match by user_id for correctness — name matching is fragile
+      const me = r.data.find((d: DoctorInfo) => d.user_id === user?.user_id);
+      if (me) {
+        setDoctor(me);
+        setDocStatus(me.status);
+      }
     } catch { /**/ }
   }, [user]);
 
@@ -64,28 +69,48 @@ export default function DoctorDashboard() {
   useEffect(() => { if (doctor) loadQueue(); }, [doctor, loadQueue]);
   useEffect(() => {
     const ws = connectGlobal((e: WSEvent) => {
-      if (e.event === "queue_update" || e.event === "consultation_ended") loadQueue();
+      if (["queue_update", "consultation_ended", "consultation_started", "doctor_status_changed"].includes(e.event)) {
+        loadQueue();
+        loadDoctor();
+      }
     });
     return () => ws.close();
-  }, [loadQueue]);
+  }, [loadQueue, loadDoctor]);
 
   const start = async (qId: string) => {
     setBusy(p => ({ ...p, [qId]: true }));
-    try { await doctorAPI.startConsultation(qId); setActiveId(qId); toast.success("Consultation started"); loadQueue(); }
+    try {
+      await doctorAPI.startConsultation(qId);
+      setActiveId(qId);
+      toast.success("Consultation started");
+      loadQueue();
+      loadDoctor();
+    }
     catch { toast.error("Failed to start"); }
     finally { setBusy(p => ({ ...p, [qId]: false })); }
   };
 
   const end = async (qId: string) => {
     setBusy(p => ({ ...p, [qId]: true }));
-    try { await doctorAPI.endConsultation(qId); setActiveId(null); toast.success("Consultation complete ✓"); loadQueue(); }
+    try {
+      await doctorAPI.endConsultation(qId);
+      setActiveId(null);
+      toast.success("Consultation complete ✓");
+      loadQueue();
+      loadDoctor();
+    }
     catch { toast.error("Failed to end"); }
     finally { setBusy(p => ({ ...p, [qId]: false })); }
   };
 
   const changeStatus = async (s: string) => {
     if (!doctor?.id) return;
-    try { await doctorAPI.updateStatus(doctor.id, s); setDocStatus(s); toast.success(`Status → ${s}`); }
+    try {
+      await doctorAPI.updateStatus(doctor.id, s);
+      setDocStatus(s);
+      toast.success(`Status → ${s}`);
+      loadDoctor();
+    }
     catch { toast.error("Failed"); }
   };
 
@@ -125,8 +150,15 @@ export default function DoctorDashboard() {
           {/* Status control */}
           <div className="rounded-2xl border border-white/[0.07] p-5"
             style={{ background: "rgba(255,255,255,0.025)", backdropFilter: "blur(16px)" }}>
-            <h3 className="text-sm font-bold text-white mb-4 flex items-center gap-2">
-              <Activity className="w-4 h-4 text-blue-400" /> My Availability Status
+            <h3 className="text-sm font-bold text-white mb-4 flex items-center justify-between">
+              <span className="flex items-center gap-2">
+                <Activity className="w-4 h-4 text-blue-400" /> My Availability Status
+              </span>
+              {docStatus === "busy" && (
+                <span className="px-2 py-0.5 text-[10px] font-bold rounded bg-red-500/10 text-red-400 border border-red-500/20 uppercase tracking-wider animate-pulse">
+                  Busy
+                </span>
+              )}
             </h3>
             <div className="grid grid-cols-3 gap-2">
               {STAT_STATUS.map(s => (

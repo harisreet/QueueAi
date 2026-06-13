@@ -33,6 +33,7 @@ export default function ReceptionDashboard() {
   const [search, setSearch] = useState("");
   const [showEmergency, setShowEmergency] = useState(false);
   const [emergencyDept, setEmergencyDept] = useState("General Medicine");
+  const [emergencyPatientName, setEmergencyPatientName] = useState("");
   const [booking, setBooking] = useState(false);
 
   const loadQueue   = useCallback(async () => { try { const r = await queueAPI.getStatus(dept);   setQueue(r.data);   } catch { /**/ } }, [dept]);
@@ -52,8 +53,23 @@ export default function ReceptionDashboard() {
   };
 
   const addEmergency = async () => {
+    if (!emergencyPatientName.trim()) {
+      toast.error("Please enter patient name for emergency");
+      return;
+    }
     setBooking(true);
-    try { await queueAPI.bookToken({ department: emergencyDept, priority: "emergency", complexity: "complex" }); toast.success("🚨 Emergency patient added"); setShowEmergency(false); loadQueue(); }
+    try {
+      await queueAPI.bookToken({
+        department: emergencyDept,
+        priority: "emergency",
+        complexity: "complex",
+        patient_name: emergencyPatientName.trim()
+      });
+      toast.success("🚨 Emergency patient added");
+      setEmergencyPatientName("");
+      setShowEmergency(false);
+      loadQueue();
+    }
     catch { toast.error("Failed"); }
     finally { setBooking(false); }
   };
@@ -128,7 +144,14 @@ export default function ReceptionDashboard() {
             <h3 className="text-sm font-bold text-red-400 mb-4 flex items-center gap-2">
               <AlertTriangle className="w-4 h-4" /> Add Emergency Patient
             </h3>
-            <div className="flex gap-3 flex-wrap">
+            <div className="flex gap-3 flex-wrap items-center">
+              <input
+                type="text"
+                placeholder="Patient Name"
+                className="py-2.5 px-4 rounded-xl text-sm text-white placeholder:text-slate-600 outline-none border border-red-500/20 bg-white/5 focus:border-red-500/50 w-64 transition-all"
+                value={emergencyPatientName}
+                onChange={e => setEmergencyPatientName(e.target.value)}
+              />
               <div className="relative">
                 <select value={emergencyDept} onChange={e => setEmergencyDept(e.target.value)}
                   className="py-2.5 pl-4 pr-8 rounded-xl text-sm text-white outline-none border border-red-500/20 appearance-none cursor-pointer"

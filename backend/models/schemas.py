@@ -19,6 +19,7 @@ class SignupRequest(BaseModel):
     age: Optional[int] = Field(None, ge=0, le=150)
     gender: Optional[str] = None
     department: Optional[str] = None
+    specialization: Optional[str] = None
 
 
 class LoginRequest(BaseModel):

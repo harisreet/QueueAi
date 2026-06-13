@@ -21,7 +21,7 @@ export default function SignupPage() {
   const [step, setStep]       = useState(1);
   const [loading, setLoading] = useState(false);
   const [showPass, setShowPass] = useState(false);
-  const [form, setForm] = useState({ name: "", email: "", password: "", phone: "", role: "patient", department: "General Medicine", age: "", gender: "other" });
+  const [form, setForm] = useState({ name: "", email: "", password: "", phone: "", role: "patient", department: "General Medicine", age: "", gender: "other", specialization: "" });
   const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }));
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -29,7 +29,7 @@ export default function SignupPage() {
     if (step === 1) { setStep(2); return; }
     setLoading(true);
     try {
-      const res  = await authAPI.signup({ ...form, age: form.age ? parseInt(form.age) : undefined });
+      const res  = await authAPI.signup({ ...form, age: form.age ? parseInt(form.age) : undefined, specialization: form.specialization || undefined });
       const data = res.data;
       setUser({ user_id: data.user_id, name: data.name, role: data.role, access_token: data.access_token });
       toast.success(`Welcome, ${data.name}!`);
@@ -179,6 +179,14 @@ export default function SignupPage() {
                     </div>
                   </div>
                 </div>
+
+                {form.role === "doctor" && (
+                  <div className="mb-8">
+                    <label className="block text-xs font-semibold text-slate-400 mb-2">Specialization <span className="text-slate-600 font-normal">(optional)</span></label>
+                    <input type="text" placeholder="e.g. Cardiologist, Pediatrician, Neurologist" value={form.specialization}
+                      onChange={e => set("specialization", e.target.value)} className={inputCls} style={inputBg} />
+                  </div>
+                )}
 
                 <div className="flex gap-3">
                   <button type="button" onClick={() => setStep(1)}

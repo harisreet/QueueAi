@@ -35,7 +35,7 @@ export default function DoctorStatsPage() {
     setLoading(true);
     try {
       const docRes = await doctorAPI.list();
-      const me = docRes.data.find((d: any) => d.name === user?.name);
+      const me = docRes.data.find((d: any) => d.user_id === user?.user_id);
       if (me) {
         setDoctor(me);
         

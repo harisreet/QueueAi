@@ -32,8 +32,9 @@ export default function HistoryPage() {
     try {
       const res = await queueAPI.getMyTokens();
       setTokens(res.data);
-      if (res.data.length > 0 && !selectedToken) {
-        setSelectedToken(res.data[0]);
+      // Only auto-select the first token on initial load (functional update avoids stale closure)
+      if (res.data.length > 0) {
+        setSelectedToken(prev => prev ?? res.data[0]);
       }
       
       // Load doctors to resolve doctor names
@@ -48,7 +49,7 @@ export default function HistoryPage() {
     } finally {
       setLoading(false);
     }
-  }, [selectedToken]);
+  }, []); // No selectedToken dep — avoids infinite re-render loop
 
   useEffect(() => {
     loadData();

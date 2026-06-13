@@ -32,6 +32,7 @@ export default function EmergencyManagementPage() {
   const [loading, setLoading] = useState(true);
   const [selectedDept, setSelectedDept] = useState("General Medicine");
   const [booking, setBooking] = useState(false);
+  const [emergencyPatientName, setEmergencyPatientName] = useState("");
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -71,14 +72,20 @@ export default function EmergencyManagementPage() {
   }, [loadData]);
 
   const addEmergency = async () => {
+    if (!emergencyPatientName.trim()) {
+      toast.error("Please enter the patient's name before triggering an emergency override.");
+      return;
+    }
     setBooking(true);
     try {
       await queueAPI.bookToken({
         department: selectedDept,
         priority: "emergency",
-        complexity: "complex"
+        complexity: "complex",
+        patient_name: emergencyPatientName.trim(),
       });
-      toast.success("🚨 Emergency override initiated! Token placed at Position 1.");
+      toast.success(`🚨 Emergency override for ${emergencyPatientName}! Token placed at Position 1.`);
+      setEmergencyPatientName("");
       loadData();
     } catch (e) {
       toast.error("Failed to initiate emergency override");
@@ -111,16 +118,27 @@ export default function EmergencyManagementPage() {
             </div>
           </div>
 
-          <div className="flex gap-3 flex-wrap">
+          <div className="flex gap-3 flex-wrap items-end">
+            <div>
+              <label className="block text-[10px] font-semibold text-red-400/70 uppercase tracking-wider mb-1.5">Patient Name *</label>
+              <input
+                type="text"
+                placeholder="Critical patient name"
+                value={emergencyPatientName}
+                onChange={e => setEmergencyPatientName(e.target.value)}
+                className="py-2.5 px-4 rounded-xl text-sm text-white placeholder:text-slate-600 outline-none border border-red-500/25 bg-[#0b0f19] w-52"
+              />
+            </div>
             <div className="relative">
+              <label className="block text-[10px] font-semibold text-red-400/70 uppercase tracking-wider mb-1.5">Department</label>
               <select value={selectedDept} onChange={e => setSelectedDept(e.target.value)}
                 className="py-2.5 pl-4 pr-8 rounded-xl text-sm text-white outline-none border border-red-500/25 bg-[#0b0f19] appearance-none cursor-pointer">
                 {DEPTS.map(d => <option key={d} value={d}>{d}</option>)}
               </select>
-              <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-600 pointer-events-none" />
+              <ChevronDown className="absolute right-2.5 bottom-2.5 w-4 h-4 text-slate-600 pointer-events-none" />
             </div>
             
-            <button onClick={addEmergency} disabled={booking}
+            <button onClick={addEmergency} disabled={booking || !emergencyPatientName.trim()}
               className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold text-white disabled:opacity-60 hover:brightness-110 transition-all bg-red-600"
               style={{ boxShadow: "0 4px 12px rgba(239,68,68,0.3)" }}>
               {booking ? <><Loader2 className="w-4 h-4 animate-spin" /> Overriding...</> : <><UserPlus className="w-4 h-4" /> Trigger Immediate Bypass</>}

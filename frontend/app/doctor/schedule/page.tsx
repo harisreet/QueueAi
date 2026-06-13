@@ -31,7 +31,7 @@ export default function DoctorSchedulePage() {
     setLoading(true);
     try {
       const r = await doctorAPI.list();
-      const me = r.data.find((d: any) => d.name === user?.name);
+      const me = r.data.find((d: any) => d.user_id === user?.user_id);
       if (me) {
         setDoctor(me);
         setStatus(me.status);

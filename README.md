@@ -154,3 +154,25 @@ Frontend  → Vercel / Docker
 Backend   → Render / Railway / AWS
 ML Model  → Served via FastAPI AI Engine
 ```
+
+---
+
+## 🛠️ Recent Bug Fixes (Completed)
+
+We resolved several key operational issues across the stack:
+- **Consolidated Transactions**: Refactored `start_consultation` and `end_consultation` in `doctors.py` to process logs, doctor statuses, and queue recalculations in a single transaction (`commit=False` in `_recalculate_queue`), preventing greenlet database session conflicts.
+- **Reception Emergency Override Name Fix**: Added name validation and a patient name text input to the quick-emergency form on the Reception Dashboard. This prevents the token from automatically registering under the receptionist's name.
+- **Doctor Status Sync**: Updated the Doctor Dashboard and WebSockets to dynamically reload the doctor's status when they start/end a consultation or modify availability, including a pulsing "Busy" badge.
+- **Immediate checkin_time Defaulting**: Ensured the database is seeded and tokens are instantiated with a guaranteed `datetime.utcnow()` value in the python model layer.
+
+---
+
+## 🗺️ Advanced Production Roadmap
+
+To expand QueueCare AI into a fully complete hospital-grade system, the following features are planned:
+1. **Doctor Shift & Schedule Integration**: Forecast wait times dynamically by reading doctors' calendars, accounting for shift start/end times and scheduled breaks.
+2. **GPS Geofencing Patient Check-In**: Prevent queue stagnation by keeping online token bookings in a "pending" state until a patient is within $500\text{m}$ of the clinic.
+3. **No-Show & Tardiness Probability Predictor**: Use a classification model to evaluate no-show risk based on weather, traffic, and past attendance to adapt queue predictions dynamically.
+4. **NLP Symptom Complexity Sorter**: Read the patient's symptom description during booking to auto-classify triage priority and clinical complexity.
+5. **Cross-Department Load Balancing**: Automatically recommend alternate, less-busy departments to patients with low-priority conditions to distribute wait times evenly.
+

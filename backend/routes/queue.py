@@ -38,15 +38,25 @@ async def _next_token(db: AsyncSession, department: str) -> str:
     return f"{prefix}{count + 1:03d}"
 
 
-async def _recalculate_queue(db: AsyncSession, department: str):
-    """Recalculate predicted wait times for all waiting patients."""
+PRIORITY_ORDER = {"emergency": 0, "urgent": 1, "normal": 2}
+
+
+async def _recalculate_queue(db: AsyncSession, department: str, commit: bool = True):
+    """Recalculate predicted wait times for all waiting patients using triage ordering."""
     result = await db.execute(
         select(Queue).where(
             Queue.department == department,
             Queue.status == "waiting",
-        ).order_by(Queue.queue_position)
+        )
     )
-    waiting = result.scalars().all()
+    waiting = list(result.scalars().all())
+
+    # Sort by triage: emergency first, then urgent, then normal, then by check-in time
+    waiting.sort(key=lambda q: (
+        PRIORITY_ORDER.get(q.priority, 2),
+        0 if q.is_emergency else 1,
+        q.checkin_time or datetime.utcnow(),
+    ))
 
     # Fetch available doctors
     dr = await db.execute(
@@ -56,17 +66,26 @@ async def _recalculate_queue(db: AsyncSession, department: str):
     doctors_count = max(1, len(doctors))
     avg_time = sum(d.avg_consult_time for d in doctors) / doctors_count if doctors else 10.0
 
+    # Count ongoing consultation (occupies a doctor slot)
+    in_consult = await db.execute(
+        select(func.count(Queue.id)).where(
+            Queue.department == department, Queue.status == "in_consultation"
+        )
+    )
+    in_consult_count = in_consult.scalar() or 0
+    effective_doctors = max(1, doctors_count - in_consult_count)
+
     # Emergency count
     emg = sum(1 for q in waiting if q.is_emergency)
     now = datetime.utcnow()
     tod = _get_time_of_day(now)
     day = now.strftime("%A")
 
+    cumulative_wait = 0.0
     for i, entry in enumerate(waiting):
-        # For each patient, queue_length is their position
         pred = predict_wait_time(
             queue_length=i + 1,
-            doctors_available=doctors_count,
+            doctors_available=effective_doctors,
             avg_consult_time=avg_time,
             emergency_cases=emg,
             department=department,
@@ -75,16 +94,20 @@ async def _recalculate_queue(db: AsyncSession, department: str):
             patient_priority=entry.priority,
             consultation_complexity=entry.complexity,
         )
+        # Cumulative wait so positions further back account for those ahead
+        slot_wait = pred["predicted_wait_time"]
+        cumulative_wait = max(cumulative_wait, slot_wait) if i == 0 else cumulative_wait + avg_time * (1.0 / effective_doctors)
         await db.execute(
             update(Queue)
             .where(Queue.id == entry.id)
             .values(
                 queue_position=i + 1,
-                predicted_wait=pred["predicted_wait_time"],
+                predicted_wait=round(slot_wait + (i * avg_time / effective_doctors), 1),
                 confidence_score=pred["confidence"],
             )
         )
-    await db.commit()
+    if commit:
+        await db.commit()
 
     # Broadcast via WebSocket
     refreshed = await db.execute(
@@ -93,10 +116,11 @@ async def _recalculate_queue(db: AsyncSession, department: str):
     queue_list = [
         {"token_no": q.token_no, "patient_name": q.patient_name,
          "position": q.queue_position, "predicted_wait": q.predicted_wait,
-         "priority": q.priority, "status": q.status}
+         "priority": q.priority, "status": q.status, "is_emergency": q.is_emergency}
         for q in refreshed.scalars().all()
     ]
     await manager.broadcast_queue_update(department, queue_list)
+
 
 
 @router.post("/book-token", response_model=QueueStatusResponse, status_code=201)
@@ -105,6 +129,21 @@ async def book_token(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    # Only patients and receptionists can book tokens
+    if current_user.role not in ("patient", "receptionist", "admin"):
+        raise HTTPException(403, "Only patients or receptionists can book tokens")
+
+    # Prevent duplicate active token in same department
+    existing = await db.execute(
+        select(Queue).where(
+            Queue.patient_id == current_user.id,
+            Queue.department == payload.department,
+            Queue.status.in_(["waiting", "in_consultation"]),
+        )
+    )
+    if existing.scalar_one_or_none():
+        raise HTTPException(400, "You already have an active token in this department")
+
     # Get doctors available in department
     dr = await db.execute(
         select(Doctor).where(Doctor.department == payload.department, Doctor.is_available == True)
@@ -144,14 +183,21 @@ async def book_token(
     token = await _next_token(db, payload.department)
     is_emergency = payload.priority == "emergency"
 
-    # Emergency patients jump to position 1
-    position = 1 if is_emergency else queue_len
+    # Initial position — triage recalc will re-order properly after insert
+    position = queue_len
+
+    # Receptionists/admins can register walk-in patients by name
+    effective_patient_name = (
+        payload.patient_name.strip()
+        if payload.patient_name and current_user.role in ("receptionist", "admin")
+        else current_user.name
+    )
 
     entry = Queue(
         id=str(uuid.uuid4()),
         token_no=token,
         patient_id=current_user.id,
-        patient_name=current_user.name,
+        patient_name=effective_patient_name,
         doctor_id=payload.doctor_id,
         department=payload.department,
         queue_position=position,
@@ -161,20 +207,25 @@ async def book_token(
         complexity=payload.complexity,
         is_emergency=is_emergency,
         appointment_time=payload.appointment_time,
+        checkin_time=datetime.utcnow(),
     )
     db.add(entry)
     await db.flush()
 
+    # Recalculate entire queue with triage ordering — this will re-rank this patient correctly
+    await _recalculate_queue(db, payload.department)
+
+    # Refresh entry to get recalculated position
+    await db.refresh(entry)
+
     # Notify patient
     await manager.send_to_patient(current_user.id, "token_booked", {
         "token_no": token,
-        "predicted_wait": pred["predicted_wait_time"],
-        "position": position,
+        "predicted_wait": entry.predicted_wait,
+        "position": entry.queue_position,
         "department": payload.department,
+        "is_emergency": is_emergency,
     })
-
-    # Recalculate rest of queue
-    await _recalculate_queue(db, payload.department)
 
     return QueueStatusResponse(
         id=entry.id, token_no=entry.token_no, patient_id=entry.patient_id,
