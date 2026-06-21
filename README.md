@@ -91,6 +91,152 @@ Four distinct authenticated user roles, each with dedicated dashboards:
 
 ---
 
+## 🏗️ System Architecture
+
+### High-Level Overview
+
+```mermaid
+graph TB
+    subgraph CLIENT["🌐 Client Layer"]
+        P["🧑 Patient\nNext.js Dashboard"]
+        D["🩺 Doctor\nNext.js Dashboard"]
+        R["🖥️ Receptionist\nNext.js Dashboard"]
+        A["🔐 Admin\nNext.js Dashboard"]
+    end
+
+    subgraph GATEWAY["⚡ API Gateway — FastAPI :8000"]
+        AUTH["🔐 /auth\nJWT Issue & Verify"]
+        QUEUE["📋 /queue\nToken Booking & Triage"]
+        DOCS["👨‍⚕️ /doctors\nCRUD + Shifts + Consults"]
+        AI["🧠 /ai\nPredict + Retrain"]
+        ANALYTICS["📊 /analytics\nKPIs + Forecasts"]
+        WS["📡 WebSocket Hub\nGlobal / Dept / Patient"]
+    end
+
+    subgraph CORE["🔧 Core Services"]
+        PRED["XGBoost\nPredictor Engine"]
+        REQUEUE["_recalculate_queue\nShift-Aware Sorter"]
+        MANAGER["WS Connection\nManager"]
+    end
+
+    subgraph DATA["🗄️ Data Layer — PostgreSQL 15"]
+        USERS[("users")]
+        QUEUES[("queue_tokens")]
+        DOCTORS[("doctors")]
+        SHIFTS[("doctor_shifts")]
+        CONSULTS[("consultation_logs")]
+        HIST[("prediction_history")]
+    end
+
+    subgraph ML["🤖 ML Layer"]
+        MODEL["xgboost_model.joblib\nR²=0.972 / MAE≈3.2min"]
+        TRAIN["train.py\n8,000-record pipeline"]
+    end
+
+    P & D & R & A -->|HTTPS REST| GATEWAY
+    P & D & R & A <-->|WebSocket| WS
+
+    AUTH --> USERS
+    QUEUE --> REQUEUE
+    DOCS --> REQUEUE
+    REQUEUE --> PRED
+    PRED --> MODEL
+    TRAIN --> MODEL
+    AI --> PRED
+    AI --> TRAIN
+
+    QUEUE --> QUEUES
+    DOCS --> DOCTORS
+    DOCS --> SHIFTS
+    DOCS --> CONSULTS
+    AI --> HIST
+    ANALYTICS --> USERS & QUEUES & CONSULTS & HIST
+
+    REQUEUE -->|broadcast| MANAGER
+    MANAGER --> WS
+```
+
+---
+
+### 🔄 Patient Request Flow
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Patient
+    participant Frontend as Next.js Frontend
+    participant API as FastAPI Backend
+    participant AI as XGBoost Engine
+    participant DB as PostgreSQL
+    participant WS as WebSocket Hub
+
+    Patient->>Frontend: Login (email + password)
+    Frontend->>API: POST /auth/login
+    API->>DB: Verify credentials (bcrypt)
+    DB-->>API: User record + role
+    API-->>Frontend: JWT token (role embedded)
+    Frontend-->>Patient: Redirect to /patient dashboard
+
+    Patient->>Frontend: Book token (dept + doctor)
+    Frontend->>API: POST /queue/book-token
+    API->>DB: Insert Queue record
+    API->>AI: predict_wait_time(12 features)
+    AI-->>API: {wait_time, confidence, recommendation}
+    API->>DB: Update predicted_wait on token
+    API->>WS: broadcast dept update
+    WS-->>Frontend: queue_update event (real-time)
+    API-->>Frontend: Token confirmed + wait estimate
+    Frontend-->>Patient: Live position + wait time shown
+
+    Note over API,WS: Doctor starts consultation
+    API->>DB: Mark doctor busy + update queue status
+    API->>AI: Recalculate all waiting slots (shift-aware)
+    AI-->>API: Updated wait times per patient
+    API->>WS: broadcast_global + broadcast_department
+    WS-->>Frontend: All dashboards refresh instantly
+```
+
+---
+
+### 🧠 Shift-Aware AI Prediction Pipeline
+
+```mermaid
+flowchart TD
+    START([Patient books token]) --> FETCH_Q
+
+    subgraph REQUEUE["_recalculate_queue — called after every consultation event"]
+        FETCH_Q["Fetch all WAITING tokens\nsorted by triage priority"] --> FETCH_DR
+        FETCH_DR["Fetch all Doctors\nin this department"] --> FETCH_SH
+        FETCH_SH["Fetch all DoctorShifts\nfor this department"]
+
+        FETCH_SH --> LOOP
+
+        subgraph LOOP["For each waiting patient i"]
+            EST["Estimate slot start time\nnow + cumulative_wait"]
+            ON_SHIFT{"Doctor scheduled\non shift at that time?"}
+            USE_LIVE["Use live is_available\nno shifts defined"]
+            USE_SHIFT["Filter to on-shift\ndoctors only"]
+            CALC_AVG["Compute avg consult time\nfor active doctor set"]
+            XGBOOST["XGBoost Predict\nwait_time, confidence"]
+            UPDATE["UPDATE queue token\npredicted_wait, queue_position"]
+            CUMUL["Add to cumulative_wait\nfor next patient"]
+
+            EST --> ON_SHIFT
+            ON_SHIFT -- No shifts defined --> USE_LIVE --> CALC_AVG
+            ON_SHIFT -- Has shifts --> USE_SHIFT --> CALC_AVG
+            CALC_AVG --> XGBOOST
+            XGBOOST --> UPDATE --> CUMUL
+        end
+
+        CUMUL --> |next patient| EST
+    end
+
+    LOOP --> BROADCAST["WS broadcast\ndept + global channels"]
+    BROADCAST --> END([All dashboards refresh])
+```
+
+---
+
 ## 🧠 AI Engine Deep Dive
 
 ```
