@@ -24,6 +24,8 @@ interface Doctor {
   status: string;
   is_available: boolean;
   patients_served_today: number;
+  avg_rating: number;
+  rating_count: number;
 }
 
 export default function DoctorManagementPage() {
@@ -272,7 +274,7 @@ export default function DoctorManagementPage() {
                     </div>
 
                     {/* Stats block */}
-                    <div className="grid grid-cols-3 gap-2 bg-white/[0.015] border border-white/[0.04] rounded-xl p-3 mb-4 text-center">
+                    <div className="grid grid-cols-4 gap-2 bg-white/[0.015] border border-white/[0.04] rounded-xl p-3 mb-4 text-center">
                       <div>
                         <div className="text-base font-bold text-blue-400">{d.patients_served_today}</div>
                         <div className="text-[9px] text-slate-500 uppercase tracking-wider font-semibold">Served</div>
@@ -290,6 +292,13 @@ export default function DoctorManagementPage() {
                       <div>
                         <div className="text-base font-bold text-emerald-400">{u.accuracy}%</div>
                         <div className="text-[9px] text-slate-500 uppercase tracking-wider font-semibold">Accuracy</div>
+                      </div>
+                      <div>
+                        <div className="flex items-center justify-center gap-0.5">
+                          <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
+                          <span className="text-base font-bold text-amber-400">{(d.avg_rating ?? 0).toFixed(1)}</span>
+                        </div>
+                        <div className="text-[9px] text-slate-500 uppercase tracking-wider font-semibold">{d.rating_count ?? 0} Ratings</div>
                       </div>
                     </div>
                   </div>

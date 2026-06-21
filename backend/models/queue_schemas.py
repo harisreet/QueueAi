@@ -70,6 +70,8 @@ class DoctorResponse(BaseModel):
     status: str
     is_available: bool
     patients_served_today: int
+    avg_rating: float = 0.0
+    rating_count: int = 0
 
     class Config:
         from_attributes = True
@@ -136,3 +138,17 @@ class ShiftResponse(BaseModel):
     class Config:
         from_attributes = True
 
+
+# ── Feedback Schemas ───────────────────────────────────────────────────────────
+
+class FeedbackCreate(BaseModel):
+    rating: int = Field(..., ge=1, le=5, description="Star rating from 1 to 5")
+    comment: Optional[str] = Field(None, max_length=500)
+
+
+class FeedbackResponse(BaseModel):
+    queue_id: str
+    doctor_id: str
+    rating: int
+    comment: Optional[str]
+    message: str

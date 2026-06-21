@@ -64,6 +64,9 @@ export const doctorAPI = {
   getShifts: (doctorId: string) => api.get(`/doctors/${doctorId}/shifts`),
   addShift: (doctorId: string, data: { start_time: string; end_time: string }) => api.post(`/doctors/${doctorId}/shifts`, data),
   deleteShift: (shiftId: string) => api.delete(`/doctors/shifts/${shiftId}`),
+  submitFeedback: (queueId: string, data: FeedbackPayload) =>
+    api.post(`/doctors/queue/${queueId}/feedback`, data),
+  getRatings: (doctorId: string) => api.get(`/doctors/${doctorId}/ratings`),
 };
 
 // ── Users ─────────────────────────────────────────────────────────────────────
@@ -117,4 +120,8 @@ export interface PredictPayload {
   queue_length: number; doctors_available: number; avg_consult_time: number;
   emergency_cases: number; department: string; time_of_day: string;
   weekday: string; patient_priority?: string; consultation_complexity?: string;
+}
+export interface FeedbackPayload {
+  rating: number;   // 1–5
+  comment?: string;
 }

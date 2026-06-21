@@ -9,7 +9,7 @@ from models.doctor import Doctor
 from models.doctor_shift import DoctorShift
 from models.queue import Queue
 from models.consultation import ConsultationLog
-from models.queue_schemas import DoctorCreate, DoctorUpdate, DoctorResponse, StartConsultationRequest, EndConsultationRequest, ShiftCreate, ShiftResponse
+from models.queue_schemas import DoctorCreate, DoctorUpdate, DoctorResponse, StartConsultationRequest, EndConsultationRequest, ShiftCreate, ShiftResponse, FeedbackCreate, FeedbackResponse
 from auth.dependencies import get_current_user
 from auth.jwt_handler import get_password_hash
 from websocket.manager import manager
@@ -354,3 +354,111 @@ async def delete_doctor_shift(
     
     await manager.broadcast_global("doctor_status_changed", {"doctor_id": shift.doctor_id, "status": "shift_deleted"})
     return {"message": "Shift deleted", "shift_id": shift_id}
+
+
+# ── Feedback / Ratings ────────────────────────────────────────────────────────
+
+@router.post("/queue/{queue_id}/feedback", response_model=FeedbackResponse)
+async def submit_feedback(
+    queue_id: str,
+    payload: FeedbackCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Patient submits a star rating (1-5) + optional comment after consultation."""
+    # 1. Find the queue token
+    q_res = await db.execute(select(Queue).where(Queue.id == queue_id))
+    token = q_res.scalar_one_or_none()
+    if not token:
+        raise HTTPException(404, "Queue token not found")
+    if token.status != "completed":
+        raise HTTPException(400, "Feedback can only be submitted for completed consultations")
+    if token.patient_id != current_user.id:
+        raise HTTPException(403, "You can only rate your own consultations")
+
+    # 2. Find the matching ConsultationLog
+    log_res = await db.execute(
+        select(ConsultationLog)
+        .where(ConsultationLog.queue_id == queue_id)
+        .order_by(ConsultationLog.created_at.desc())
+    )
+    log = log_res.scalars().first()
+    if not log:
+        raise HTTPException(404, "Consultation log not found for this token")
+    if log.patient_rating is not None:
+        raise HTTPException(409, "Feedback already submitted for this consultation")
+
+    # 3. Save rating + comment on the log
+    log.patient_rating = payload.rating
+    log.patient_feedback = payload.comment
+
+    # 4. Recalculate doctor's rolling avg_rating
+    if log.doctor_id:
+        dr_res = await db.execute(select(Doctor).where(Doctor.id == log.doctor_id))
+        doctor = dr_res.scalar_one_or_none()
+        if doctor:
+            new_count = doctor.rating_count + 1
+            new_avg = ((doctor.avg_rating * doctor.rating_count) + payload.rating) / new_count
+            doctor.rating_count = new_count
+            doctor.avg_rating = round(new_avg, 2)
+
+    await db.commit()
+
+    await manager.broadcast_global("feedback_submitted", {
+        "doctor_id": log.doctor_id,
+        "rating": payload.rating,
+    })
+
+    return FeedbackResponse(
+        queue_id=queue_id,
+        doctor_id=log.doctor_id or "",
+        rating=payload.rating,
+        comment=payload.comment,
+        message="Thank you! Your feedback has been recorded.",
+    )
+
+
+@router.get("/{doctor_id}/ratings")
+async def get_doctor_ratings(
+    doctor_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return all ratings submitted for a doctor with comments."""
+    logs_res = await db.execute(
+        select(
+            ConsultationLog.id,
+            ConsultationLog.queue_id,
+            ConsultationLog.patient_rating,
+            ConsultationLog.patient_feedback,
+            ConsultationLog.created_at,
+            ConsultationLog.department,
+        )
+        .where(
+            ConsultationLog.doctor_id == doctor_id,
+            ConsultationLog.patient_rating.isnot(None),
+        )
+        .order_by(ConsultationLog.created_at.desc())
+        .limit(50)
+    )
+    rows = logs_res.all()
+
+    # Doctor summary
+    dr_res = await db.execute(select(Doctor).where(Doctor.id == doctor_id))
+    doctor = dr_res.scalar_one_or_none()
+
+    return {
+        "doctor_id": doctor_id,
+        "avg_rating": doctor.avg_rating if doctor else 0.0,
+        "rating_count": doctor.rating_count if doctor else 0,
+        "reviews": [
+            {
+                "id": r.id,
+                "rating": r.patient_rating,
+                "comment": r.patient_feedback,
+                "department": r.department,
+                "date": r.created_at.isoformat() if r.created_at else None,
+            }
+            for r in rows
+        ],
+    }

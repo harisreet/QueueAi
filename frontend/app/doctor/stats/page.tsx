@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState, useCallback } from "react";
-import { Stethoscope, BarChart2, Calendar, Users, Clock, CheckCircle, Activity, RefreshCw } from "lucide-react";
+import { Stethoscope, BarChart2, Calendar, Users, Clock, CheckCircle, Activity, RefreshCw, Star } from "lucide-react";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import { doctorAPI, analyticsAPI } from "@/lib/api";
 import { useAuthStore } from "@/lib/auth";
@@ -29,6 +29,7 @@ export default function DoctorStatsPage() {
   const [doctor, setDoctor] = useState<any>(null);
   const [logs, setLogs] = useState<any[]>([]);
   const [util, setUtil] = useState<any>(null);
+  const [ratings, setRatings] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
   const loadData = useCallback(async () => {
@@ -45,7 +46,6 @@ export default function DoctorStatsPage() {
         ]);
 
         if (logsRes.status === "fulfilled") {
-          // Filter logs for this doctor
           const myLogs = logsRes.value.data.filter((l: any) => l.doctor_id === me.id);
           setLogs(myLogs);
         }
@@ -53,6 +53,11 @@ export default function DoctorStatsPage() {
           const myUtil = utilRes.value.data.find((u: any) => u.doctor_id === me.id);
           setUtil(myUtil);
         }
+        // Fetch ratings
+        try {
+          const ratRes = await doctorAPI.getRatings(me.id);
+          setRatings(ratRes.data);
+        } catch (_) {}
       }
     } catch (e) {
       toast.error("Failed to load doctor statistics");
@@ -108,6 +113,55 @@ export default function DoctorStatsPage() {
               <div className="text-xs text-white font-bold mb-1">{s.label}</div>
             </div>
           ))}
+        </div>
+
+        {/* Patient Rating Card */}
+        <div className="rounded-2xl border border-amber-500/20 p-5" style={{ background: "rgba(255,255,255,0.025)", backdropFilter: "blur(16px)" }}>
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h3 className="text-sm font-bold text-white">Patient Satisfaction Rating</h3>
+              <p className="text-xs text-slate-500">{ratings?.rating_count ?? doctor?.rating_count ?? 0} reviews collected</p>
+            </div>
+            <div className="text-right">
+              <div className="text-3xl font-black text-amber-400">
+                {(ratings?.avg_rating ?? doctor?.avg_rating ?? 0).toFixed(1)}
+              </div>
+              <div className="text-[10px] text-slate-500">out of 5.0</div>
+            </div>
+          </div>
+          {/* Stars visual */}
+          <div className="flex gap-1 mb-4">
+            {[1,2,3,4,5].map(s => {
+              const avg = ratings?.avg_rating ?? doctor?.avg_rating ?? 0;
+              return (
+                <Star key={s} className={`w-6 h-6 ${
+                  s <= Math.round(avg) ? "fill-amber-400 text-amber-400" : "text-slate-700"
+                }`} />
+              );
+            })}
+          </div>
+          {/* Recent reviews */}
+          {ratings?.reviews?.length > 0 ? (
+            <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
+              {ratings.reviews.slice(0, 5).map((r: any) => (
+                <div key={r.id} className="bg-white/[0.03] border border-white/[0.05] rounded-xl p-3">
+                  <div className="flex items-center justify-between mb-1">
+                    <div className="flex gap-0.5">
+                      {[1,2,3,4,5].map(s => (
+                        <Star key={s} className={`w-3 h-3 ${s <= r.rating ? "fill-amber-400 text-amber-400" : "text-slate-700"}`} />
+                      ))}
+                    </div>
+                    <span className="text-[10px] text-slate-600">
+                      {r.date ? new Date(r.date).toLocaleDateString([], { month: "short", day: "numeric" }) : ""}
+                    </span>
+                  </div>
+                  {r.comment && <p className="text-[10px] text-slate-400 leading-relaxed">{r.comment}</p>}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs text-slate-600">No patient reviews yet. Reviews appear here after patients complete consultations.</p>
+          )}
         </div>
 
         {/* Charts Row */}

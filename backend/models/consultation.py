@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import String, Float, DateTime, Boolean, Text
+from sqlalchemy import String, Float, DateTime, Boolean, Text, Integer
 from sqlalchemy.orm import Mapped, mapped_column
 from database.connection import Base
 
@@ -22,6 +22,8 @@ class ConsultationLog(Base):
     is_emergency: Mapped[bool] = mapped_column(Boolean, default=False)
     complexity: Mapped[str] = mapped_column(String(20), default="routine")
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    patient_rating: Mapped[int | None] = mapped_column(Integer, nullable=True)   # 1–5 stars
+    patient_feedback: Mapped[str | None] = mapped_column(Text, nullable=True)    # free-text comment
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
