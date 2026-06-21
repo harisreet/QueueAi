@@ -54,6 +54,29 @@ Four distinct authenticated user roles, each with dedicated dashboards:
 | 🖥️ **Receptionist** | Live multi-department queue monitor, walk-in patient check-in, emergency patient override with name input, doctor status board |
 | 🔐 **Admin** | System-wide analytics KPIs, hourly traffic charts, doctor utilization, prediction accuracy metrics, user account management, AI model retraining |
 
+### ⭐ Post-Consultation Feedback & Doctor Ratings
+- Patients are prompted to rate their experience (1–5 stars + optional comment) immediately after their consultation is marked `completed`
+- Star ratings are stored per-consultation and used to compute a **rolling average rating** per doctor
+- Doctor dashboards display their personal average star rating and recent review snippets
+- Admin and receptionist panels show doctor ratings inline with each doctor card
+- Feedback is persisted in `ConsultationLog` and broadcast via WebSocket on submission
+
+### 🔬 NLP Symptom Complexity Classifier
+- Patients describe their symptoms in **free-form natural language** on the booking page
+- A lightweight Python NLP classifier (`symptom_classifier.py`) runs a debounced analysis after 800ms of typing
+- Extracts medical keywords and maps them against a tiered symptom dictionary to auto-assign `priority` (normal/urgent/emergency) and `complexity` (routine/moderate/complex)
+- Live result card shows confidence score, matched keywords, and priority badge — patients can override if needed
+- Eliminates manual priority selection; reduces receptionist triage error
+
+### 📺 Waiting Room Display Board
+- Public-facing `/display/{department}` route — **no login required**, designed for hospital TV screens
+- **Now Serving** panel: large-format token display with breathing pulse animation and assigned doctor name
+- **Up Next** panel: sorted waiting queue with priority colour coding (🔴 Emergency, 🟡 Urgent, 🔵 Normal) and estimated wait times
+- **Live digital clock** with date and department info always visible
+- **WebSocket-powered**: connects to the department channel and auto-refreshes on every queue event
+- **Web Audio API dual-tone chime** (E5 → A5) synthesized in-browser when the active token changes — no audio files required
+- Direct "TV Board" button added to Receptionist dashboard to launch the display for the currently selected department
+
 ### 📡 Real-Time WebSocket Architecture
 - Three dedicated WebSocket channels: `global` (admin/reception), `department/{dept}` (per-department updates), `patient/{id}` (personal notifications)
 - Every consultation start/end, queue recalculation, doctor status change, and emergency override broadcasts instantly to all connected clients
@@ -277,9 +300,10 @@ For each patient[i] in waiting queue:
 queueai/
 ├── frontend/                    # Next.js 16 + TypeScript
 │   ├── app/
-│   │   ├── patient/             # Patient dashboard, booking, history
-│   │   ├── doctor/              # Doctor queue, stats, schedule + shift manager
-│   │   ├── reception/           # Queue monitor, add patient, emergency, doctors
+│   │   ├── patient/             # Patient dashboard, booking (NLP classifier), history
+│   │   ├── doctor/              # Doctor queue, stats (ratings), schedule + shift manager
+│   │   ├── reception/           # Queue monitor, add patient, emergency, doctors, TV Board link
+│   │   ├── display/[department] # 🆕 Public TV waiting room display board (no auth)
 │   │   └── admin/               # Analytics, queue admin, user management
 │   ├── components/layout/       # DashboardLayout, Navbar
 │   └── lib/                     # api.ts (Axios client), auth.ts (Zustand), websocket.ts
@@ -288,18 +312,19 @@ queueai/
 │   ├── routes/
 │   │   ├── auth.py              # Signup/Login/JWT
 │   │   ├── queue.py             # Token booking, shift-aware wait recalculation
-│   │   ├── doctors.py           # Doctor CRUD, consultations, shift management
+│   │   ├── doctors.py           # Doctor CRUD, consultations, shifts, feedback/ratings
 │   │   ├── analytics.py         # KPI aggregates and hourly traffic
-│   │   ├── ai.py                # Prediction endpoint, model retraining
+│   │   ├── ai.py                # Prediction endpoint, model retraining, NLP classifier
 │   │   └── users.py             # User management (admin)
 │   ├── models/
-│   │   ├── doctor.py            # Doctor ORM model
-│   │   ├── doctor_shift.py      # DoctorShift ORM model (new)
+│   │   ├── doctor.py            # Doctor ORM model (avg_rating field)
+│   │   ├── doctor_shift.py      # DoctorShift ORM model
 │   │   ├── queue.py             # Queue ORM model
-│   │   ├── consultation.py      # ConsultationLog + PredictionHistory
-│   │   └── queue_schemas.py     # Pydantic schemas (incl. ShiftCreate/ShiftResponse)
+│   │   ├── consultation.py      # ConsultationLog (feedback_rating, feedback_comment)
+│   │   └── queue_schemas.py     # Pydantic schemas (incl. ShiftCreate, FeedbackPayload)
 │   ├── ai_engine/
 │   │   ├── predictor.py         # Hybrid XGBoost prediction engine
+│   │   ├── symptom_classifier.py # 🆕 NLP keyword-based triage classifier
 │   │   └── train.py             # Model training pipeline
 │   ├── auth/                    # JWT handler + get_current_user dependency
 │   ├── database/                # Async SQLAlchemy engine + Base
@@ -397,6 +422,7 @@ Open **http://localhost:3000**
 | Method | Endpoint | Description |
 |---|---|---|
 | POST | `/ai/predict-wait-time` | On-demand wait prediction |
+| POST | `/ai/classify-symptoms` | 🆕 NLP symptom triage → auto-assign priority + complexity |
 | POST | `/ai/retrain-model` | Trigger XGBoost retraining |
 | GET | `/ai/model-status` | Model version and accuracy info |
 | GET | `/analytics/summary` | System-wide KPIs |
@@ -405,10 +431,21 @@ Open **http://localhost:3000**
 | GET | `/analytics/peak-hour-forecast/{dept}` | 24-hour congestion curve |
 | GET | `/analytics/doctor-utilization` | Per-doctor usage stats |
 
+### Feedback & Ratings
+| Method | Endpoint | Description |
+|---|---|---|
+| POST | `/doctors/queue/{queue_id}/feedback` | 🆕 Submit star rating + comment after consultation |
+| GET | `/doctors/{id}/ratings` | 🆕 Get doctor's average rating and recent reviews |
+
+### Waiting Room Display Board
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/display/{department}` | 🆕 Public TV-optimized waiting room board (no auth) |
+
 ### WebSocket Channels
 ```
 ws://localhost:8000/ws/global             → Admin/Reception live events
-ws://localhost:8000/ws/department/{dept}  → Department queue updates
+ws://localhost:8000/ws/department/{dept}  → Department queue updates (powers Display Board)
 ws://localhost:8000/ws/patient/{id}       → Personal patient notifications
 ```
 
@@ -442,10 +479,13 @@ Full Stack → Docker Compose (single-command local deploy)
 | ✅ | Emergency triage override | **Shipped** |
 | ✅ | Multi-role dashboards | **Shipped** |
 | ✅ | Doctor shift scheduling + shift-aware predictions | **Shipped** |
+| ✅ | Post-consultation feedback & doctor star ratings | **Shipped** |
+| ✅ | NLP Symptom Complexity Classifier | **Shipped** |
+| ✅ | Waiting Room TV Display Board (`/display/{dept}`) | **Shipped** |
 | 🔜 | No-Show & Tardiness Probability Predictor | Planned |
-| 🔜 | NLP Symptom Complexity Classifier | Planned |
 | 🔜 | Cross-Department Load Balancing | Planned |
 | 🔜 | GPS Geofencing Patient Check-In | Planned |
+| 🔜 | Progressive Web App (PWA) + offline queue tracking | Planned |
 
 ---
 
