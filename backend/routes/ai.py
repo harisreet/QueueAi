@@ -1,10 +1,33 @@
 from fastapi import APIRouter, BackgroundTasks, Depends
+from pydantic import BaseModel
 from models.queue_schemas import PredictWaitRequest, PredictWaitResponse
 from ai_engine.predictor import predict_wait_time, reload_model, get_peak_hour_forecast
+from ai_engine.symptom_classifier import classify_symptoms
 from auth.dependencies import get_current_user
 from models.user import User
 
 router = APIRouter(prefix="/ai", tags=["AI Engine"])
+
+
+class SymptomRequest(BaseModel):
+    symptoms: str
+
+
+@router.post("/classify-symptoms")
+async def classify_symptom_endpoint(payload: SymptomRequest):
+    """
+    Classify free-text patient symptoms into triage priority and complexity.
+    No auth required — called live as patient types on booking form.
+    """
+    result = classify_symptoms(payload.symptoms)
+    return {
+        "priority":         result.priority,
+        "complexity":       result.complexity,
+        "matched_keywords": result.matched_keywords,
+        "confidence":       result.confidence,
+        "reasoning":        result.reasoning,
+    }
+
 
 
 @router.post("/predict-wait-time", response_model=PredictWaitResponse)

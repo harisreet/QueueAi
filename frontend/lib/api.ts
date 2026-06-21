@@ -86,6 +86,8 @@ export const aiAPI = {
   predict: (data: PredictPayload) => api.post("/ai/predict-wait-time", data),
   retrain: () => api.post("/ai/retrain-model"),
   status: () => api.get("/ai/model-status"),
+  classifySymptoms: (symptoms: string) =>
+    api.post("/ai/classify-symptoms", { symptoms }),
 };
 
 // ── Analytics ─────────────────────────────────────────────────────────────────
