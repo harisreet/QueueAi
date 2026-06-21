@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState, useCallback } from "react";
-import { Users, UserPlus, AlertTriangle, Stethoscope, RefreshCw, Search, ChevronDown, Loader2 } from "lucide-react";
+import { Users, UserPlus, AlertTriangle, Stethoscope, RefreshCw, Search, ChevronDown, Loader2, Monitor } from "lucide-react";
+import Link from "next/link";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import { queueAPI, doctorAPI } from "@/lib/api";
 import { connectGlobal, WSEvent } from "@/lib/websocket";
@@ -131,6 +132,11 @@ export default function ReceptionDashboard() {
             style={{ background: "rgba(255,255,255,0.04)" }}>
             <RefreshCw className="w-4 h-4" /> Refresh
           </button>
+          <Link href={`/display/${encodeURIComponent(dept)}`} target="_blank"
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-blue-400 border border-blue-500/20 hover:border-blue-500/40 hover:bg-blue-500/5 transition-all"
+            style={{ background: "rgba(37,99,235,0.04)" }}>
+            <Monitor className="w-4 h-4" /> TV Board
+          </Link>
           <button onClick={() => setShowEmergency(!showEmergency)}
             className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white hover:brightness-110 transition-all"
             style={{ background: "linear-gradient(135deg,#be123c,#e11d48)", boxShadow: "0 4px 12px rgba(225,29,72,0.3)" }}>
